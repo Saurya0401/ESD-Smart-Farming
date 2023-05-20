@@ -46,16 +46,17 @@ class Client(mqtt.Client):
                     self.get_data()
                 except ValueError:
                     print('No data received from Arduino')
-                    continue
-                self.publish(
-                    'v1/devices/me/telemetry', 
-                    json.dumps(self.sensor_data), 
-                    Client.DEFAULT_QOS
-                )
-                print('Published:')
-                for key, val in self.sensor_data.items():
-                    print(f'\t->{key} = {val}')
-                sleep(Client.DELAY_SECONDS)
+                else:
+                    self.publish(
+                        'v1/devices/me/telemetry', 
+                        json.dumps(self.sensor_data), 
+                        Client.DEFAULT_QOS
+                    )
+                    print('Published:')
+                    for key, val in self.sensor_data.items():
+                        print(f'\t->{key} = {val}')
+                finally:
+                    sleep(Client.DELAY_SECONDS)
         except KeyboardInterrupt:
             print('Sensor data publish stopped')
             self.receiver.radio.powerDown()
