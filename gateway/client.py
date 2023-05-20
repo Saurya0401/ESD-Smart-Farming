@@ -9,11 +9,11 @@ from receiver import Receiver
 
 
 class Client(mqtt.Client):
-    THINGSBOARD_HOST: str = 'demo.thingsboard.io'
-    THINGSBOARD_PORT: int = 1883
-    ACCESS_TOKEN: str = 'td4W5nqvPdYzIYpiYOrH'
-    DELAY_SECONDS: int = 5
-    DEFAULT_QOS: int = 1
+    THINGSBOARD_HOST: Final[str] = 'demo.thingsboard.io'
+    THINGSBOARD_PORT: Final[int] = 1883
+    ACCESS_TOKEN: Final[str] = 'td4W5nqvPdYzIYpiYOrH'
+    DELAY_SECONDS: Final[int] = 5
+    DEFAULT_QOS: Final[int] = 1
 
     KEY_TEMP: Final[str] = 'temperature'
     KEY_LIGHT: Final[str] = 'light_level'
