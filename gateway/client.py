@@ -5,7 +5,7 @@ from time import sleep
 from random import randrange, uniform
 from typing import Final
 
-from src.receiver import Receiver
+from receiver import Receiver
 
 
 class Gateway(mqtt.Client):
