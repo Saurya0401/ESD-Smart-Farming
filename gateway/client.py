@@ -5,7 +5,7 @@ from time import sleep
 from random import randrange, uniform
 from typing import Final
 
-from receiver import Receiver
+from gateway.receiver import Receiver
 
 
 class Client(mqtt.Client):
@@ -31,12 +31,15 @@ class Client(mqtt.Client):
         self.receiver = Receiver()
 
     def get_data(self) -> None:
-        if not self.receiver.receive():
+        if not (recv_data_raw := self.receiver.receive()):
             raise ValueError
-        # TODO: parse received data
-        self.sensor_data[Client.KEY_TEMP] = round(uniform(20.0, 30.0), 4)
-        self.sensor_data[Client.KEY_LIGHT] = randrange(1000, 4001)
-        self.sensor_data[Client.KEY_WATER] = randrange(0, 11)
+        recv_data: str = recv_data_raw.decode('utf-8').rstrip('\0')
+        values: list[float] = [float(d) for d in recv_data.split(';')]
+        if len(values) < 3:
+            raise ValueError
+        self.sensor_data[Client.KEY_TEMP] = values[0]
+        self.sensor_data[Client.KEY_LIGHT] = values[1]
+        self.sensor_data[Client.KEY_WATER] = values[2]
 
     def publish_sensor_data(self) -> None:
         self.loop_start()
@@ -44,8 +47,8 @@ class Client(mqtt.Client):
             while True:
                 try:
                     self.get_data()
-                except ValueError:
-                    print('No data received from Arduino')
+                except (ValueError, UnicodeDecodeError):
+                    print('No data or invalid data received from Arduino')
                 else:
                     self.publish(
                         'v1/devices/me/telemetry', 
@@ -59,7 +62,7 @@ class Client(mqtt.Client):
                     sleep(Client.DELAY_SECONDS)
         except KeyboardInterrupt:
             print('Sensor data publish stopped')
-            self.receiver.radio.powerDown()
+            self.receiver.stop()
             return
         
 
