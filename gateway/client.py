@@ -2,7 +2,6 @@ import paho.mqtt.client as mqtt
 
 import json
 from time import sleep
-from random import randrange, uniform
 from typing import Final
 
 from gateway.receiver import Receiver
@@ -28,7 +27,7 @@ class Client(mqtt.Client):
         }
         self.username_pw_set(Client.ACCESS_TOKEN)
         self.connect(Client.THINGSBOARD_HOST, Client.THINGSBOARD_PORT, 60)
-        self.receiver = Receiver()
+        self.receiver: Receiver = Receiver()
 
     def get_data(self) -> None:
         if not (recv_data_raw := self.receiver.receive()):
@@ -63,6 +62,7 @@ class Client(mqtt.Client):
         except KeyboardInterrupt:
             print('Sensor data publish stopped')
             self.receiver.stop()
+            self.disconnect()
             return
         
 
