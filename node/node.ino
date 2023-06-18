@@ -5,30 +5,30 @@
 #include <nRF24L01.h>
 #include <RF24.h>
 
-#define DHTPIN    4       // Digital pin connected to the DHT sensor
+#define DHTPIN    6       // Digital pin connected to the DHT sensor
 #define DHTTYPE   DHT11   // DHT 11
-#define RELAY1    5       // Relay pin for controlling the pump
-#define RELAY2    6       // Relay pin for controlling the LED
+#define RELAY1    7       // Relay pin for controlling the pump
+#define RELAY2    8       // Relay pin for controlling the LED
 #define SOIL      A0      // Soil moisture sensor analog pin
-#define TRIG      9       // Ultrasonic sensor trigger pin
-#define ECHO      10      // Ultrasonic sensor echo pin
-#define CE_PIN    19       // CE pin for nrf24
-#define CSN_PIN   18       // CNS pin for nrf24
+#define TRIG      15       // Ultrasonic sensor trigger pin
+#define ECHO      16      // Ultrasonic sensor echo pin
+#define CE_PIN    9       // CE pin for nrf24
+#define CSN_PIN   10       // CNS pin for nrf24
 #define DRY       500
 #define WET       200
-#define W_HEIGHT  100
+#define W_HEIGHT  13.75
 
 int moist_analog;
-float humidity, temperature, moist_percent, water_level;
+float humidity, temperature = 0, moist_percent = 0, water_level = 0;
 
 DHT dht(DHTPIN, DHTTYPE);
-ThreeWire myWire(2, 4, 5); // IO, SCLK, CE
+ThreeWire myWire(4, 5, 2); // IO, SCLK, CE
 RtcDS1302<ThreeWire> Rtc(myWire);
 NewPing ultrasonic(TRIG, ECHO); // Create an instance of NewPing
 
 RF24 radio(CE_PIN, CSN_PIN);
 uint64_t address = 0xF1F1F0F0E0LL;
-char tx_data[32];
+char s_temp[10], s_moist[10], s_water[10], tx_data[32];
 
 float wetThreshold = 100.0;  // Initial moisture threshold for wet soil
 float dryThreshold = 0.0;    // Initial moisture threshold for dry soil
@@ -127,11 +127,13 @@ void loop() {
     Serial.print("Humidity: "); Serial.println(humidity);
     Serial.print("Temperature: "); Serial.println(temperature);
   }
+  dtostrf(temperature, 9, 2, s_temp);
 
   // Soil Moisture
   moist_analog = analogRead(SOIL);
   moist_percent = map(moist_analog, WET, DRY, 100, 0);
   Serial.print("Soil Moisture: "); Serial.println(moist_percent);
+  dtostrf(moist_percent, 9, 2, s_moist);
 
   // Pump control based on moisture percentage
   if (moist_percent < dryThreshold) {  // Pump water if moisture percentage is below threshold
@@ -156,12 +158,13 @@ void loop() {
 
   // Ultrasonic Sensor
   unsigned int distance = ultrasonic.ping_cm();
-  water_level = 100 * ((W_HEIGHT - distance) / W_HEIGHT);
-  // Serial.print("Distance: "); Serial.print(distance); Serial.println(" cm");
+  water_level = 100 * ((W_HEIGHT - (float) distance) / W_HEIGHT);
+  Serial.print("Distance: "); Serial.print(distance); Serial.println(" cm");
   Serial.print("Water level: "); Serial.print(water_level);
-
-  sprintf(tx_data, "%.3f;%.3f;%.3f", temperature, moist_percent, water_level);
-  radio.write(&tx_data, sizeof(tx_data)) ? Serial.print("Successfully") : Serial.print("Unable to");
+  dtostrf(water_level, 9, 2, s_water);
+//
+  sprintf(tx_data, "%s;%s;%s", s_temp, s_moist, s_water);
+  radio.write(&tx_data, sizeof(tx_data)) ? Serial.print("\nSuccessfully") : Serial.print("\nUnable to");
   Serial.print(" transmit data: "); Serial.println(tx_data);
 
   delay(100); // Add a small delay for stability
