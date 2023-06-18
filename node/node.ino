@@ -160,7 +160,7 @@ void loop() {
   // Serial.print("Distance: "); Serial.print(distance); Serial.println(" cm");
   Serial.print("Water level: "); Serial.print(water_level);
 
-  sprintf(tx_data, "%.3f;%.3f,%.3f", temperature, moist_percent, water_level);
+  sprintf(tx_data, "%.3f;%.3f;%.3f", temperature, moist_percent, water_level);
   radio.write(&tx_data, sizeof(tx_data)) ? Serial.print("Successfully") : Serial.print("Unable to");
   Serial.print(" transmit data: "); Serial.println(tx_data);
 
