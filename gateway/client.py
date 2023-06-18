@@ -13,16 +13,16 @@ class Client(mqtt.Client):
     DELAY_SECONDS: Final[int] = 5
     DEFAULT_QOS: Final[int] = 1
 
-    KEY_TEMP: Final[str] = 'temperature'
-    KEY_LIGHT: Final[str] = 'light_level'
-    KEY_WATER: Final[str] = 'water_level'
+    KEY_TEMP: Final[str] = 'Temperature'
+    KEY_MOIST: Final[str] = 'Soil Moisture'
+    KEY_WATER: Final[str] = 'Water Level'
 
     def __init__(self) -> None:
         super().__init__()
         self.sensor_data: dict[str, float] = {
             Client.KEY_TEMP: 0.0,
-            Client.KEY_LIGHT: 0,
-            Client.KEY_WATER: 0,
+            Client.KEY_MOIST: 0.0,
+            Client.KEY_WATER: 0.0,
         }
         with open('gateway/token') as f:
             access_token = f.read().strip('\n')
@@ -38,7 +38,7 @@ class Client(mqtt.Client):
         if len(values) < 3:
             raise ValueError
         self.sensor_data[Client.KEY_TEMP] = values[0]
-        self.sensor_data[Client.KEY_LIGHT] = values[1]
+        self.sensor_data[Client.KEY_MOIST] = values[1]
         self.sensor_data[Client.KEY_WATER] = values[2]
 
     def publish_sensor_data(self) -> None:
