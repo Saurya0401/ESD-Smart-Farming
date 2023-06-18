@@ -1,83 +1,131 @@
-#include <DHT.h>
-#include <SPI.h>
+#include "DHT.h"
+#include <ThreeWire.h>  
+#include <RtcDS1302.h>
+#include <NewPing.h>
 #include <nRF24L01.h>
 #include <RF24.h>
-#include <RTClib.h>
-#include <Wire.h>
 
-#define DHTPIN    4         // Digital pin connected to the DHT sensor
-#define DHTTYPE   DHT11     // DHT 11
-#define TRIGPIN   5         // Ultrasonic sensor trigger pin
-#define ECHOPIN   18        // Ultrasonic sensor echo pin
-#define RELAY1    19        // Relay pin for controlling the pump
-#define RELAY2    13        // Relay pin for controlling the LED
-#define SOIL      1         // Soil moisture sensor analog pin
-#define CE_PIN    7         // CE pin for nrf24
-#define CSN_PIN   8         // CNS pin for nrf24
+#define DHTPIN    4       // Digital pin connected to the DHT sensor
+#define DHTTYPE   DHT11   // DHT 11
+#define RELAY1    5       // Relay pin for controlling the pump
+#define RELAY2    6       // Relay pin for controlling the LED
+#define SOIL      A0      // Soil moisture sensor analog pin
+#define TRIG      9       // Ultrasonic sensor trigger pin
+#define ECHO      10      // Ultrasonic sensor echo pin
+#define CE_PIN    19       // CE pin for nrf24
+#define CSN_PIN   18       // CNS pin for nrf24
+#define DRY       500
+#define WET       200
+#define W_HEIGHT  100
 
-const int HEIGHT_OF_TUBE = 10;    // Height of the water tank in cm
-const float SOUND_SPEED = 0.034;  // Speed of sound in cm/microsecond
-const int WET = 210;              // Moisture reading for wet soil
-const int DRY = 510;              // Moisture reading for dry soil
+int moist_analog;
+float humidity, temperature, moist_percent, water_level;
 
-// Create a DHT object.
 DHT dht(DHTPIN, DHTTYPE);
-long duration;
-float water_level;
-
-RTC_DS3231 rtc;
-char ts[32];
+ThreeWire myWire(2, 4, 5); // IO, SCLK, CE
+RtcDS1302<ThreeWire> Rtc(myWire);
+NewPing ultrasonic(TRIG, ECHO); // Create an instance of NewPing
 
 RF24 radio(CE_PIN, CSN_PIN);
 uint64_t address = 0xF1F1F0F0E0LL;
 char tx_data[32];
 
-float temperature; // Temperature reading from DHT sensor
-float wetThreshold = 100.0; // Initial moisture threshold for wet soil
-float dryThreshold = 0.0;   // Initial moisture threshold for dry soil
+float wetThreshold = 100.0;  // Initial moisture threshold for wet soil
+float dryThreshold = 0.0;    // Initial moisture threshold for dry soil
 
-int moist_analog;
-float moist_percent;
+unsigned long previousMillis = 0;
+const unsigned long interval = 2000;  // Interval for reading the DHT sensor (2 seconds)
 
 void setup() {
-  Serial.begin(115200);
-  dht.begin();          // Initialize the DHT sensor
-  pinMode(TRIGPIN, OUTPUT); // Set the trigPin as an Output
-  pinMode(ECHOPIN, INPUT);  // Set the echoPin as an Input
+  Serial.begin(9600);
+  dht.begin();
   pinMode(RELAY1, OUTPUT);
-  pinMode(RELAY2, OUTPUT); // Set the LED pin as an Output
-
-  Wire.begin();
-  rtc.begin();
-  rtc.adjust(DateTime(F(__DATE__), F(__TIME__)));  // Adjust RTC to compile time
+  pinMode(RELAY2, OUTPUT);
+  digitalWrite(RELAY1, HIGH);
+  digitalWrite(RELAY2, HIGH);
 
   radio.begin();
   radio.openWritingPipe(address);
   radio.setPALevel(RF24_PA_MIN);
   radio.stopListening();
+
+  Serial.print("compiled: ");
+  Serial.print(__DATE__);
+  Serial.println(__TIME__);
+
+  Rtc.Begin();
+
+  RtcDateTime compiled = RtcDateTime(__DATE__, __TIME__);
+  printDateTime(compiled);
+  Serial.println();
+
+  if (!Rtc.IsDateTimeValid()) 
+  {
+    // Common Causes:
+    //    1) first time you ran and the device wasn't running yet
+    //    2) the battery on the device is low or even missing
+
+    Serial.println("RTC lost confidence in the DateTime!");
+    Rtc.SetDateTime(compiled);
+  }
+
+  if (Rtc.GetIsWriteProtected())
+  {
+    Serial.println("RTC was write protected, enabling writing now");
+    Rtc.SetIsWriteProtected(false);
+  }
+
+  if (!Rtc.GetIsRunning())
+  {
+    Serial.println("RTC was not actively running, starting now");
+    Rtc.SetIsRunning(true);
+  }
+
+  RtcDateTime now = Rtc.GetDateTime();
+  if (now < compiled) 
+  {
+    Serial.println("RTC is older than compile time!  (Updating DateTime)");
+    Rtc.SetDateTime(compiled);
+  }
+  else if (now > compiled) 
+  {
+    Serial.println("RTC is newer than compile time. (this is expected)");
+  }
+  else if (now == compiled) 
+  {
+    Serial.println("RTC is the same as compile time! (not expected but all is fine)");
+  }
 }
 
 void loop() {
-  // DHT sensor
-  temperature = dht.readTemperature();
-  // Check if any reads failed and exit early (to try again).
-  if (isnan(temperature)) {
-    Serial.println("Failed to read from DHT sensor!");
-    return;
-  }
-  // Print the temperature to the serial port
-  Serial.print("Temperature: "); Serial.println(temperature);
+  unsigned long currentMillis = millis();
 
-  // Adjust moisture threshold based on temperature
-  if (temperature >= 30) {
-    wetThreshold = 100.0; // Adjust wet threshold for high temperatures
-    dryThreshold = 30.0;  // Adjust dry threshold for high temperatures
-  } else if (temperature >= 20 && temperature < 30) {
-    wetThreshold = 90.0; // Adjust wet threshold for moderate temperatures
-    dryThreshold = 20.0; // Adjust dry threshold for moderate temperatures
-  } else {
-    wetThreshold = 80.0; // Adjust wet threshold for low temperatures
-    dryThreshold = 10.0; // Adjust dry threshold for low temperatures
+  // Read DHT sensor every 2 seconds
+  if (currentMillis - previousMillis >= interval) {
+    previousMillis = currentMillis;
+
+    humidity = dht.readHumidity();
+    temperature = dht.readTemperature();
+
+    if (isnan(humidity) || isnan(temperature)) {
+      Serial.println("Failed to read from DHT sensor!");
+      return;
+    }
+
+    // Adjust moisture threshold based on temperature
+    if (temperature >= 30) {
+      wetThreshold = 100.0;  // Adjust wet threshold for high temperatures
+      dryThreshold = 30.0;   // Adjust dry threshold for high temperatures
+    } else if (temperature >= 20 && temperature < 30) {
+      wetThreshold = 90.0;   // Adjust wet threshold for moderate temperatures
+      dryThreshold = 20.0;   // Adjust dry threshold for moderate temperatures
+    } else {
+      wetThreshold = 80.0;   // Adjust wet threshold for low temperatures
+      dryThreshold = 10.0;   // Adjust dry threshold for low temperatures
+    }
+
+    Serial.print("Humidity: "); Serial.println(humidity);
+    Serial.print("Temperature: "); Serial.println(temperature);
   }
 
   // Soil Moisture
@@ -92,35 +140,48 @@ void loop() {
     digitalWrite(RELAY1, HIGH);
   }
 
-  // Ultrasonic sensor
-  // Clears the trigPin
-  digitalWrite(TRIGPIN, LOW);
-  delayMicroseconds(2);
-  // Sets the trigPin on HIGH state for 10 microseconds
-  digitalWrite(TRIGPIN, HIGH);
-  delayMicroseconds(10);
-  digitalWrite(TRIGPIN, LOW);
-  // Reads the echoPin, returns the sound wave travel time in microseconds
-  duration = pulseIn(ECHOPIN, HIGH);
-  // Calculate the distance
-  water_level = duration * SOUND_SPEED / 2;
-  // Prints the distance in the Serial Monitor
-  Serial.print("Distance (cm): "); Serial.println(water_level);
-  if (water_level > HEIGHT_OF_TUBE) {
-    Serial.println("Water Level Low!!");
+  RtcDateTime now = Rtc.GetDateTime();
+
+  printDateTime(now);
+  Serial.println();
+
+  if (!now.IsValid())
+  {
+    // Common Causes:
+    //    1) the battery on the device is low or even missing and the power line was disconnected
+    Serial.println("RTC lost confidence in the DateTime!");
   }
 
-  // Turn LED on/off based on current time
-  DateTime now = rtc.now();
-  sprintf(ts, "%02d:%02d:%02d %02d/%02d/%02d", now.hour(), now.minute(), now.second(), now.day(), now.month(), now.year());
-  Serial.print("Date/Time: "); Serial.println(ts);
-  digitalWrite(RELAY2, now.hour() >= 18 && now.hour() < 7 ? HIGH : LOW);
+  digitalWrite(RELAY2, (now.Hour() > 18 || now.Hour() < 7) ? LOW : HIGH);
 
-  // Attempt to send data to Raspberry Pi gateway
+  // Ultrasonic Sensor
+  unsigned int distance = ultrasonic.ping_cm();
+  water_level = 100 * ((W_HEIGHT - distance) / W_HEIGHT);
+  // Serial.print("Distance: "); Serial.print(distance); Serial.println(" cm");
+  Serial.print("Water level: "); Serial.print(water_level);
+
   sprintf(tx_data, "%.3f;%.3f,%.3f", temperature, moist_percent, water_level);
   radio.write(&tx_data, sizeof(tx_data)) ? Serial.print("Successfully") : Serial.print("Unable to");
   Serial.print(" transmit data: "); Serial.println(tx_data);
 
-  delay(2000); // Obtain DHT sensor reading every 2 seconds (limit is 1kHz)
+  delay(100); // Add a small delay for stability
   Serial.println();
+}
+
+#define countof(a) (sizeof(a) / sizeof(a[0]))
+
+void printDateTime(const RtcDateTime& dt)
+{
+  char datestring[20];
+
+  snprintf_P(datestring, 
+    countof(datestring),
+    PSTR("%02u/%02u/%04u %02u:%02u:%02u"),
+    dt.Month(),
+    dt.Day(),
+    dt.Year(),
+    dt.Hour(),
+    dt.Minute(),
+    dt.Second());
+  Serial.print(datestring);
 }
