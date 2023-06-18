@@ -10,7 +10,6 @@ from gateway.receiver import Receiver
 class Client(mqtt.Client):
     THINGSBOARD_HOST: Final[str] = 'demo.thingsboard.io'
     THINGSBOARD_PORT: Final[int] = 1883
-    ACCESS_TOKEN: Final[str] = 'td4W5nqvPdYzIYpiYOrH'
     DELAY_SECONDS: Final[int] = 5
     DEFAULT_QOS: Final[int] = 1
 
@@ -25,7 +24,9 @@ class Client(mqtt.Client):
             Client.KEY_LIGHT: 0,
             Client.KEY_WATER: 0,
         }
-        self.username_pw_set(Client.ACCESS_TOKEN)
+        with open('gateway/token') as f:
+            access_token = f.read().strip('\n')
+        self.username_pw_set(access_token)
         self.connect(Client.THINGSBOARD_HOST, Client.THINGSBOARD_PORT, 60)
         self.receiver: Receiver = Receiver()
 
