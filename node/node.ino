@@ -5,24 +5,24 @@
 #include <nRF24L01.h>
 #include <RF24.h>
 
-#define DHTPIN    6       // Digital pin connected to the DHT sensor
+#define DHTPIN    5       // Digital pin connected to the DHT sensor
 #define DHTTYPE   DHT11   // DHT 11
-#define RELAY1    7       // Relay pin for controlling the pump
-#define RELAY2    8       // Relay pin for controlling the LED
-#define SOIL      A0      // Soil moisture sensor analog pin
-#define TRIG      15       // Ultrasonic sensor trigger pin
-#define ECHO      16      // Ultrasonic sensor echo pin
-#define CE_PIN    9       // CE pin for nrf24
-#define CSN_PIN   10       // CNS pin for nrf24
-#define DRY       500
-#define WET       200
+#define RELAY1    6       // Relay pin for controlling the pump
+#define RELAY2    7       // Relay pin for controlling the LED
+#define SOIL      A10      // Soil moisture sensor analog pin
+#define TRIG      A2      // Ultrasonic sensor trigger pin
+#define ECHO      A3      // Ultrasonic sensor echo pin
+#define CE_PIN    A1       // CE pin for nrf24
+#define CSN_PIN   A0     // CNS pin for nrf24
+#define DRY       580
+#define WET       240
 #define W_HEIGHT  13.75
 
 int moist_analog;
 float humidity, temperature = 0, moist_percent = 0, water_level = 0;
 
 DHT dht(DHTPIN, DHTTYPE);
-ThreeWire myWire(4, 5, 2); // IO, SCLK, CE
+ThreeWire myWire(2, 3, 4); // IO, SCLK, CE
 RtcDS1302<ThreeWire> Rtc(myWire);
 NewPing ultrasonic(TRIG, ECHO); // Create an instance of NewPing
 
@@ -34,7 +34,8 @@ float wetThreshold = 100.0;  // Initial moisture threshold for wet soil
 float dryThreshold = 0.0;    // Initial moisture threshold for dry soil
 
 unsigned long previousMillis = 0;
-const unsigned long interval = 2000;  // Interval for reading the DHT sensor (2 seconds)
+const unsigned long interval = 2000;      // Interval for reading the DHT sensor (2 seconds)
+const unsigned long transmissionInterval = 5000;  // Interval for transmitting sensor data (5 seconds)
 
 void setup() {
   Serial.begin(9600);
@@ -127,12 +128,20 @@ void loop() {
     Serial.print("Humidity: "); Serial.println(humidity);
     Serial.print("Temperature: "); Serial.println(temperature);
   }
+  
+  Serial.println(dryThreshold);
+  Serial.println(wetThreshold);
+  
   dtostrf(temperature, 9, 2, s_temp);
 
   // Soil Moisture
   moist_analog = analogRead(SOIL);
+  Serial.println(moist_analog);
   moist_percent = map(moist_analog, WET, DRY, 100, 0);
-  Serial.print("Soil Moisture: "); Serial.println(moist_percent);
+  moist_percent = moist_percent > 100.0 ? 100.0 : moist_percent;
+  moist_percent = moist_percent < 0.0 ? 0.0 : moist_percent;
+  Serial.print("Soil moisture: "); Serial.println(moist_percent);
+
   dtostrf(moist_percent, 9, 2, s_moist);
 
   // Pump control based on moisture percentage
@@ -154,18 +163,29 @@ void loop() {
     Serial.println("RTC lost confidence in the DateTime!");
   }
 
-  digitalWrite(RELAY2, (now.Hour() > 18 || now.Hour() < 7) ? LOW : HIGH);
+  digitalWrite(RELAY2, (now.Hour() >  8 && now.Hour() < 17) ? LOW : HIGH);
 
   // Ultrasonic Sensor
   unsigned int distance = ultrasonic.ping_cm();
   water_level = 100 * ((W_HEIGHT - (float) distance) / W_HEIGHT);
-  Serial.print("Distance: "); Serial.print(distance); Serial.println(" cm");
-  Serial.print("Water level: "); Serial.print(water_level);
+  water_level = water_level > 100.0 ? 100.0 : water_level;
+  water_level = water_level < 0.0 ? 0.0 : water_level;
+  Serial.print("Distance: ");
+  Serial.print(distance);
+  Serial.println(" cm");
+  Serial.print("Water level: "); Serial.println(water_level);
   dtostrf(water_level, 9, 2, s_water);
-//
-  sprintf(tx_data, "%s;%s;%s", s_temp, s_moist, s_water);
-  radio.write(&tx_data, sizeof(tx_data)) ? Serial.print("\nSuccessfully") : Serial.print("\nUnable to");
-  Serial.print(" transmit data: "); Serial.println(tx_data);
+
+  // Transmit sensor data every 5 seconds
+  static unsigned long previousTransmissionMillis = 0;
+  if (currentMillis - previousTransmissionMillis >= transmissionInterval) {
+    previousTransmissionMillis = currentMillis;
+
+    sprintf(tx_data, "%s;%s;%s", s_temp, s_moist, s_water);
+    radio.write(&tx_data, sizeof(tx_data)) ? Serial.print("Successfully") : Serial.print("Unable to");
+    Serial.print(" transmit data: ");
+    Serial.println(tx_data);
+  }
 
   delay(100); // Add a small delay for stability
   Serial.println();
@@ -179,12 +199,9 @@ void printDateTime(const RtcDateTime& dt)
 
   snprintf_P(datestring, 
     countof(datestring),
-    PSTR("%02u/%02u/%04u %02u:%02u:%02u"),
-    dt.Month(),
-    dt.Day(),
-    dt.Year(),
+    PSTR("%02u:%02u:%02u"),
     dt.Hour(),
     dt.Minute(),
     dt.Second());
-  Serial.print(datestring);
+  Serial.print("Time: "); Serial.print(datestring);
 }
